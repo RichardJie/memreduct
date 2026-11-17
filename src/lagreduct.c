@@ -363,7 +363,7 @@ static PLAG_CPU_SLOT _lag_find_or_alloc_cpu_slot (
 	ULONG start_idx;
 	ULONG idx;
 	ULONG oldest_idx = 0;
-	ULONG oldest_gen = MAXULONG;
+	ULONG oldest_gen = 0xFFFFFFFFUL;
 
 	start_idx = (pid * 2654435761UL) % LAG_CPU_TRACK_SLOTS;
 

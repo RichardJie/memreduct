@@ -35,8 +35,7 @@ jobs:
           Write-Host "Visual Studio version: $ver"
           $toolset = if ($ver -like "18.*") { "v145" } else { "v143" }
           Write-Host "Using PlatformToolset: $toolset"
-          $solDir = (Resolve-Path "memreduct").Path + "\"
-          msbuild memreduct\memreduct.vcxproj -p:Configuration=Release -p:Platform=x64 -p:PlatformToolset=$toolset -p:SolutionDir="$solDir" -v:normal
+          msbuild memreduct\memreduct.sln -p:Configuration=Release -p:Platform=x64 -p:PlatformToolset=$toolset -v:minimal
 
       - name: Stage Portable Package
         shell: pwsh

@@ -3,7 +3,51 @@
 
 #pragma once
 
-#include <mountmgr.h>
+#if !defined(MOUNTMGRCONTROLTYPE)
+#define MOUNTMGRCONTROLTYPE 0x0000006D // 'm'
+#define MOUNTMGR_DEVICE_NAME L"\\Device\\MountPointManager"
+#define IOCTL_MOUNTMGR_QUERY_POINTS CTL_CODE(MOUNTMGRCONTROLTYPE, 2, METHOD_BUFFERED, FILE_ANY_ACCESS)
+
+typedef struct _MOUNTMGR_MOUNT_POINT
+{
+	ULONG SymbolicLinkNameOffset;
+	USHORT SymbolicLinkNameLength;
+	USHORT Reserved1;
+	ULONG UniqueIdOffset;
+	USHORT UniqueIdLength;
+	USHORT Reserved2;
+	ULONG DeviceNameOffset;
+	USHORT DeviceNameLength;
+	USHORT Reserved3;
+} MOUNTMGR_MOUNT_POINT, *PMOUNTMGR_MOUNT_POINT;
+
+typedef struct _MOUNTMGR_MOUNT_POINTS
+{
+	ULONG Size;
+	ULONG NumberOfMountPoints;
+	MOUNTMGR_MOUNT_POINT MountPoints[1];
+} MOUNTMGR_MOUNT_POINTS, *PMOUNTMGR_MOUNT_POINTS;
+
+#define MOUNTMGR_IS_VOLUME_NAME(s) ( \
+	((s)->Length == 96 || ((s)->Length == 98 && (s)->Buffer[48] == L'\\')) && \
+	(s)->Buffer[0] == L'\\' && \
+	((s)->Buffer[1] == L'?' || (s)->Buffer[1] == L'\\') && \
+	(s)->Buffer[2] == L'?' && \
+	(s)->Buffer[3] == L'\\' && \
+	(s)->Buffer[4] == L'V' && \
+	(s)->Buffer[5] == L'o' && \
+	(s)->Buffer[6] == L'l' && \
+	(s)->Buffer[7] == L'u' && \
+	(s)->Buffer[8] == L'm' && \
+	(s)->Buffer[9] == L'e' && \
+	(s)->Buffer[10] == L'{' && \
+	(s)->Buffer[19] == L'-' && \
+	(s)->Buffer[24] == L'-' && \
+	(s)->Buffer[29] == L'-' && \
+	(s)->Buffer[34] == L'-' && \
+	(s)->Buffer[47] == L'}' \
+)
+#endif // !MOUNTMGRCONTROLTYPE
 
 #if !defined(_r_button_ischecked)
 #define _r_button_ischecked(hwnd, ctrl_id) _r_ctrl_isbuttonchecked ((hwnd), (ctrl_id))

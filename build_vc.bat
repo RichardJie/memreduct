@@ -11,11 +11,28 @@ if exist "%ProgramFiles%\Microsoft Visual Studio\18\Community\VC\Auxiliary\Build
 
 if exist "%ProgramFiles%\Microsoft Visual Studio\18\Professional\VC\Auxiliary\Build\vcvarsall.bat" (
 	call "%ProgramFiles%\Microsoft Visual Studio\18\Professional\VC\Auxiliary\Build\vcvarsall.bat" amd64_arm64
+	set TOOLSET=v145
 	goto start
 )
 
-echo VS 2026 was not found...
+if exist "%ProgramFiles(x86)%\Microsoft Visual Studio\2022\BuildTools\VC\Auxiliary\Build\vcvars64.bat" (
+	call "%ProgramFiles(x86)%\Microsoft Visual Studio\2022\BuildTools\VC\Auxiliary\Build\vcvars64.bat"
+	set TOOLSET=v143
+	goto start_x64
+)
 
+if exist "%ProgramFiles%\Microsoft Visual Studio\2022\Community\VC\Auxiliary\Build\vcvars64.bat" (
+	call "%ProgramFiles%\Microsoft Visual Studio\2022\Community\VC\Auxiliary\Build\vcvars64.bat"
+	set TOOLSET=v143
+	goto start_x64
+)
+
+echo Visual Studio was not found...
+
+goto end
+
+:start_x64
+msbuild memreduct.sln -property:Configuration=Release -property:Platform=x64 -property:PlatformToolset=%TOOLSET% -verbosity:minimal
 goto end
 
 :start
