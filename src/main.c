@@ -2,11 +2,15 @@
 // Copyright (c) 2011-2026 Henry++
 
 #include "routine.h"
+#include "routine_compat.h"
 
 #include "main.h"
+#include "lagreduct.h"
 #include "rapp.h"
 
 #include "resource.h"
+
+DEFINE_GUID (GUID_TrayIcon, 0xAE9053F0, 0x8D59, 0x4803, 0x9A, 0xBB, 0x74, 0xAF, 0xE6, 0x6B, 0x5F, 0xD2);
 
 STATIC_DATA config = {0};
 
@@ -20,6 +24,8 @@ INT WINAPIV compare_numbers (
 )
 {
 	ULONG val1, val2;
+
+	UNREFERENCED_PARAMETER (context);
 
 	val1 = PtrToUlong (ptr1);
 	val2 = PtrToUlong (ptr2);
@@ -42,7 +48,8 @@ VOID _app_generate_array (
 {
 	PR_HASHTABLE hashtable;
 	ULONG_PTR enum_key = 0;
-	ULONG hash_code, index = 0;
+	ULONG_PTR hash_code = 0;
+	ULONG index = 0;
 
 	RtlSecureZeroMemory (integers, sizeof (ULONG) * count);
 
@@ -64,7 +71,7 @@ VOID _app_generate_array (
 	while (_r_obj_enumhashtable (hashtable, NULL, &hash_code, &enum_key))
 	{
 		if (hash_code <= max_value)
-			integers[index] = hash_code;
+			integers[index] = (ULONG)hash_code;
 
 		if (++index >= count)
 			break;
@@ -127,22 +134,22 @@ VOID _app_generate_menu (
 
 ULONG _app_getlimitvalue ()
 {
-	return _r_calc_clamp (_r_config_getulong (L"AutoreductValue", DEFAULT_AUTOREDUCT_VAL, NULL), 0, 100);
+	return (ULONG)_r_calc_clamp ((LONG)_r_config_getulong (L"AutoreductValue", DEFAULT_AUTOREDUCT_VAL, NULL), 0, 100);
 }
 
 ULONG _app_getintervalvalue ()
 {
-	return _r_calc_clamp (_r_config_getulong (L"AutoreductIntervalValue", DEFAULT_AUTOREDUCTINTERVAL_VAL, NULL), 1, 1440);
+	return (ULONG)_r_calc_clamp ((LONG)_r_config_getulong (L"AutoreductIntervalValue", DEFAULT_AUTOREDUCTINTERVAL_VAL, NULL), 1, 1440);
 }
 
 ULONG _app_getdangervalue ()
 {
-	return _r_calc_clamp (_r_config_getulong (L"TrayLevelDanger", DEFAULT_DANGER_LEVEL, NULL), 0, 100);
+	return (ULONG)_r_calc_clamp ((LONG)_r_config_getulong (L"TrayLevelDanger", DEFAULT_DANGER_LEVEL, NULL), 0, 100);
 }
 
 ULONG _app_getwarningvalue ()
 {
-	return _r_calc_clamp (_r_config_getulong (L"TrayLevelWarning", DEFAULT_WARNING_LEVEL, NULL), 0, 100);
+	return (ULONG)_r_calc_clamp ((LONG)_r_config_getulong (L"TrayLevelWarning", DEFAULT_WARNING_LEVEL, NULL), 0, 100);
 }
 
 ULONG64 _app_getmemoryinfo (
@@ -273,14 +280,19 @@ VOID _app_memoryclean (
 	_In_opt_ ULONG mask
 )
 {
-	WCHAR buffer_cleaned_result[0x100] = {0}, buffer_region[0x100] = {0}, buffer_result[0x100] = {0};
+	WCHAR buffer_cleaned_result[0x100] = {0}, buffer_region[0x100] = {0}, buffer_result[0x200] = {0};
 	MEMORY_COMBINE_INFORMATION_EX combine_info_ex = {0};
 	SYSTEM_FILECACHE_INFORMATION sfci = {0};
+	LAG_CLEAN_RESULT lag_result = {0};
 	SYSTEM_MEMORY_LIST_COMMAND command;
 	R_MEMORY_INFO mem_info;
 	ULONG64 reduct_after, reduct_before;
 	ULONG flags = NIIF_WARNING;
+	BOOLEAN is_default_clean;
+	BOOLEAN has_lag_action = FALSE;
 	NTSTATUS status;
+
+	is_default_clean = (mask == 0);
 
 	if (!_r_config_getboolean (L"IsNotificationsSound", TRUE, NULL))
 		flags |= NIIF_NOSOUND;
@@ -297,7 +309,7 @@ VOID _app_memoryclean (
 			if (src == SOURCE_CMDLINE)
 			{
 				if (hwnd)
-					_r_show_message (hwnd, MB_OK | MB_ICONSTOP, _r_locale_getstring (IDS_STATUS_NOPRIVILEGES), NULL);
+					_r_show_message (hwnd, MB_OK | MB_ICONSTOP, NULL, _r_locale_getstring (IDS_STATUS_NOPRIVILEGES));
 			}
 			else
 			{
@@ -395,7 +407,7 @@ VOID _app_memoryclean (
 		status = NtSetSystemInformation (SystemMemoryListInformation, &command, sizeof (SYSTEM_MEMORY_LIST_COMMAND));
 
 		if (!NT_SUCCESS (status))
-			_r_log (LOG_LEVEL_ERROR, NULL, L"NtSetSystemInformation", L"MemoryEmptyWorkingSets", status);
+			_r_log (LOG_LEVEL_ERROR, NULL, L"NtSetSystemInformation", status, L"MemoryEmptyWorkingSets");
 	}
 
 	// System file cache
@@ -407,7 +419,7 @@ VOID _app_memoryclean (
 		status = NtSetSystemInformation (SystemFileCacheInformationEx, &sfci, sizeof (SYSTEM_FILECACHE_INFORMATION));
 
 		if (!NT_SUCCESS (status))
-			_r_log (LOG_LEVEL_ERROR, NULL, L"NtSetSystemInformation", L"SystemFileCacheInformation", status);
+			_r_log (LOG_LEVEL_ERROR, NULL, L"NtSetSystemInformation", status, L"SystemFileCacheInformation");
 	}
 
 	// Flush volume cache
@@ -422,7 +434,7 @@ VOID _app_memoryclean (
 		status = NtSetSystemInformation (SystemMemoryListInformation, &command, sizeof (SYSTEM_MEMORY_LIST_COMMAND));
 
 		if (!NT_SUCCESS (status))
-			_r_log (LOG_LEVEL_ERROR, NULL, L"NtSetSystemInformation", L"MemoryFlushModifiedList", status);
+			_r_log (LOG_LEVEL_ERROR, NULL, L"NtSetSystemInformation", status, L"MemoryFlushModifiedList");
 	}
 
 	// Standby list (vista+)
@@ -433,7 +445,7 @@ VOID _app_memoryclean (
 		status = NtSetSystemInformation (SystemMemoryListInformation, &command, sizeof (SYSTEM_MEMORY_LIST_COMMAND));
 
 		if (!NT_SUCCESS (status))
-			_r_log (LOG_LEVEL_ERROR, NULL, L"NtSetSystemInformation", L"MemoryPurgeStandbyList", status);
+			_r_log (LOG_LEVEL_ERROR, NULL, L"NtSetSystemInformation", status, L"MemoryPurgeStandbyList");
 	}
 
 	// Standby priority-0 list (vista+)
@@ -444,7 +456,7 @@ VOID _app_memoryclean (
 		status = NtSetSystemInformation (SystemMemoryListInformation, &command, sizeof (SYSTEM_MEMORY_LIST_COMMAND));
 
 		if (!NT_SUCCESS (status))
-			_r_log (LOG_LEVEL_ERROR, NULL, L"NtSetSystemInformation", L"MemoryPurgeLowPriorityStandbyList", status);
+			_r_log (LOG_LEVEL_ERROR, NULL, L"NtSetSystemInformation", status, L"MemoryPurgeLowPriorityStandbyList");
 	}
 
 	// Flush registry cache (win8.1+)
@@ -453,7 +465,7 @@ VOID _app_memoryclean (
 		status = NtSetSystemInformation (SystemRegistryReconciliationInformation, NULL, 0);
 
 		if (!NT_SUCCESS (status))
-			_r_log (LOG_LEVEL_ERROR, NULL, L"NtSetSystemInformation", L"SystemRegistryReconciliationInformation", status);
+			_r_log (LOG_LEVEL_ERROR, NULL, L"NtSetSystemInformation", status, L"SystemRegistryReconciliationInformation");
 	}
 
 	// Combine memory lists (win10+)
@@ -462,7 +474,13 @@ VOID _app_memoryclean (
 		status = NtSetSystemInformation (SystemCombinePhysicalMemoryInformation, &combine_info_ex, sizeof (MEMORY_COMBINE_INFORMATION_EX));
 
 		if (!NT_SUCCESS (status))
-			_r_log (LOG_LEVEL_ERROR, NULL, L"NtSetSystemInformation", L"SystemCombinePhysicalMemoryInformation", status);
+			_r_log (LOG_LEVEL_ERROR, NULL, L"NtSetSystemInformation", status, L"SystemCombinePhysicalMemoryInformation");
+	}
+
+	// Lag Reduct submodule integration
+	if (is_default_clean && _r_config_getboolean (L"LagWithMemClean", TRUE, NULL))
+	{
+		has_lag_action = _lag_clean (hwnd, src, 0, FALSE, &lag_result);
 	}
 
 	SetCursor (LoadCursorW (NULL, IDC_ARROW));
@@ -480,12 +498,28 @@ VOID _app_memoryclean (
 	_r_str_printf (buffer_result, RTL_NUMBER_OF (buffer_result), _r_locale_getstring (IDS_STATUS_CLEANED), buffer_cleaned_result);
 	_r_str_printf (buffer_result, RTL_NUMBER_OF (buffer_result), L"%s\r\n\r\n%s:\r\n%s", buffer_result, _r_locale_getstring (IDS_TITLE_3), buffer_region);
 
+	if (has_lag_action)
+	{
+		WCHAR lag_msg[0x100] = {0};
+
+		_r_str_printf (
+			lag_msg,
+			RTL_NUMBER_OF (lag_msg),
+			_r_locale_getstring (IDS_LAG_STATUS_CLEANED),
+			lag_result.handles_reclaimed,
+			lag_result.killed_leak_processes + lag_result.killed_sandbox_processes,
+			lag_result.is_dwm_reset ? L"Yes" : L"No"
+		);
+
+		_r_str_append (buffer_result, RTL_NUMBER_OF (buffer_result), L"\r\n\r\n");
+		_r_str_append (buffer_result, RTL_NUMBER_OF (buffer_result), lag_msg);
+	}
+
 	if (src == SOURCE_CMDLINE)
 	{
-		if (_r_config_getboolean (L"BalloonCleanResults", TRUE, NULL))
+		if (hwnd && _r_config_getboolean (L"BalloonCleanResults", TRUE, NULL))
 		{
-			if (!_r_tray_popup (hwnd, &GUID_TrayIcon, flags, _r_app_getname (), buffer_result))
-				_r_show_message (hwnd, MB_OK | MB_ICONINFORMATION, _r_locale_getstring (IDS_SETTINGS_MEMORY), buffer_result);
+			_r_tray_popup (hwnd, &GUID_TrayIcon, flags, _r_app_getname (), buffer_result);
 		}
 		else
 		{
@@ -499,7 +533,7 @@ VOID _app_memoryclean (
 	}
 
 	if (_r_config_getboolean (L"LogCleanResults", FALSE, NULL))
-		_r_log_v (LOG_LEVEL_INFO, NULL, _app_getcleanupreason (src), 0, buffer_cleaned_result);
+		_r_log_v (LOG_LEVEL_INFO, NULL, _app_getcleanupreason (src), 0, L"%s", buffer_cleaned_result);
 }
 
 VOID _app_fontinit (
@@ -658,17 +692,26 @@ VOID CALLBACK _app_timercallback (
 	_In_ ULONG time
 )
 {
+	LAG_STATUS_INFO lag_info = {0};
 	R_MEMORY_INFO mem_info;
 	WCHAR buffer[0x80];
+	WCHAR np_buf[0x40];
+	WCHAR p_buf[0x40];
 	HICON hicon = NULL;
 	LONG64 timestamp;
-	ULONG percent;
+	ULONG percent = 0;
+	ULONG dwm_percent = 0;
+	ULONG proc_limit_k;
 	BOOLEAN is_clean = FALSE;
+
+	UNREFERENCED_PARAMETER (msg);
+	UNREFERENCED_PARAMETER (time);
 
 	if (id_event != UID)
 		return;
 
 	_app_getmemoryinfo (&mem_info);
+	_lag_getstatus (&lag_info);
 
 	// autocleanup functional
 	if (_r_sys_iselevated ())
@@ -689,12 +732,19 @@ VOID CALLBACK _app_timercallback (
 		{
 			timestamp = _r_unixtime_now () - _r_config_getlong64 (L"StatisticLastReduct", 0, NULL);
 
-			if (timestamp >= (_app_getintervalvalue () * 60))
+			if (timestamp >= ((LONG64)_app_getintervalvalue () * 60))
 				is_clean = TRUE;
 		}
 
 		if (is_clean)
+		{
 			_app_memoryclean (hwnd, SOURCE_AUTO, 0);
+		}
+		else if (_lag_should_autoclean (&lag_info))
+		{
+			_lag_clean (hwnd, SOURCE_AUTO, 0, TRUE, NULL);
+			_lag_getstatus (&lag_info);
+		}
 	}
 
 	// check previous percent to prevent icon redraw
@@ -709,17 +759,24 @@ VOID CALLBACK _app_timercallback (
 		hwnd,
 		&GUID_TrayIcon,
 		hicon,
-		L"%s: %" TEXT (PR_DOUBLE) L"%%\r\n%s: %" TEXT (PR_DOUBLE) L"%%\r\n%s: %" TEXT (PR_DOUBLE) L"%%",
+		L"%s: %" TEXT (PR_DOUBLE) L"%%\r\n%s: %" TEXT (PR_DOUBLE) L"%%\r\n%s: %" TEXT (PR_DOUBLE) L"%%\r\n%s: %" TEXT (PR_ULONG),
 		_r_locale_getstring (IDS_GROUP_1),
 		mem_info.physical_memory.percent_f,
 		_r_locale_getstring (IDS_GROUP_2),
 		mem_info.page_file.percent_f,
 		_r_locale_getstring (IDS_GROUP_3),
-		mem_info.system_cache.percent_f
+		mem_info.system_cache.percent_f,
+		_r_locale_getstring (IDS_LAG_ITEM_1),
+		lag_info.total_handles
 	);
 
 	if (!_r_wnd_isvisible (hwnd, FALSE))
 		return;
+
+	proc_limit_k = _lag_getprochandlelimit_k ();
+
+	if (proc_limit_k > 0)
+		dwm_percent = (ULONG)_r_calc_clamp ((LONG)(((ULONG64)lag_info.dwm_handles * 100ULL) / ((ULONG64)proc_limit_k * 1000ULL)), 0, 100);
 
 	// set item lparam information
 	for (INT i = 0; i < _r_listview_getitemcount (hwnd, IDC_LISTVIEW); i++)
@@ -735,6 +792,18 @@ VOID CALLBACK _app_timercallback (
 		else if (i < 9)
 		{
 			percent = mem_info.system_cache.percent;
+		}
+		else if (i == 9)
+		{
+			percent = lag_info.handle_pressure_percent;
+		}
+		else if (i == 10)
+		{
+			percent = dwm_percent;
+		}
+		else
+		{
+			percent = 0;
 		}
 
 		_r_listview_setitem (hwnd, IDC_LISTVIEW, i, 0, NULL, I_DEFAULT, I_DEFAULT, (LPARAM)percent);
@@ -769,6 +838,18 @@ VOID CALLBACK _app_timercallback (
 
 	_r_format_bytesize64 (buffer, RTL_NUMBER_OF (buffer), mem_info.system_cache.total_bytes);
 	_r_listview_setitem (hwnd, IDC_LISTVIEW, 8, 1, buffer, I_DEFAULT, I_DEFAULT, I_DEFAULT);
+
+	// system lag guard
+	_r_str_printf (buffer, RTL_NUMBER_OF (buffer), L"%" TEXT (PR_ULONG) L" / %" TEXT (PR_ULONG) L"k (%" TEXT (PR_ULONG) L"%%)", lag_info.total_handles, _lag_getsyshandlelimit_k (), lag_info.handle_pressure_percent);
+	_r_listview_setitem (hwnd, IDC_LISTVIEW, 9, 1, buffer, I_DEFAULT, I_DEFAULT, I_DEFAULT);
+
+	_r_str_printf (buffer, RTL_NUMBER_OF (buffer), L"%" TEXT (PR_ULONG) L" / %" TEXT (PR_ULONG) L"k", lag_info.dwm_handles, proc_limit_k);
+	_r_listview_setitem (hwnd, IDC_LISTVIEW, 10, 1, buffer, I_DEFAULT, I_DEFAULT, I_DEFAULT);
+
+	_r_format_bytesize64 (np_buf, RTL_NUMBER_OF (np_buf), lag_info.nonpaged_pool_bytes);
+	_r_format_bytesize64 (p_buf, RTL_NUMBER_OF (p_buf), lag_info.paged_pool_bytes);
+	_r_str_printf (buffer, RTL_NUMBER_OF (buffer), L"%s / %s", np_buf, p_buf);
+	_r_listview_setitem (hwnd, IDC_LISTVIEW, 11, 1, buffer, I_DEFAULT, I_DEFAULT, I_DEFAULT);
 
 	_r_listview_redraw (hwnd, IDC_LISTVIEW);
 }
@@ -839,7 +920,7 @@ VOID _app_hotkeyinit (
 		return;
 
 	if (!RegisterHotKey (hwnd, UID, (HIBYTE (hotkey) & 2) | ((HIBYTE (hotkey) & 4) >> 2) | ((HIBYTE (hotkey) & 1) << 2), LOBYTE (hotkey)))
-		_r_show_errormessage (hwnd, L"Could not register hotkey!", NULL, NtLastError (), ET_WINDOWS);
+		_r_show_errormessage (hwnd, L"Could not register hotkey!", NtLastError (), NULL, ET_WINDOWS);
 }
 
 FORCEINLINE VOID _app_setfontcontrol (
@@ -849,6 +930,8 @@ FORCEINLINE VOID _app_setfontcontrol (
 	_In_ LONG dpi_value
 )
 {
+	UNREFERENCED_PARAMETER (ctrl_id);
+
 	_r_ctrl_setstringformat (hwnd, IDC_FONT, L"%s, %" TEXT (PR_LONG) L"px, %" TEXT (PR_LONG), logfont->lfFaceName, _r_dc_fontheighttosize (logfont->lfHeight, dpi_value), logfont->lfWeight);
 }
 
@@ -1024,6 +1107,40 @@ INT_PTR CALLBACK SettingsProc (
 
 					break;
 				}
+
+				case IDD_SETTINGS_LAGREDUCT:
+				{
+					ULONG lag_mask = _lag_getmask ();
+
+					_r_button_setcheck (hwnd, IDC_LAG_HANDLELEAK_CHK, (lag_mask & LAG_REDUCT_HANDLE_LEAKS) == LAG_REDUCT_HANDLE_LEAKS);
+					_r_button_setcheck (hwnd, IDC_LAG_DWMRESET_CHK, (lag_mask & LAG_REDUCT_DWM_BLOAT) == LAG_REDUCT_DWM_BLOAT);
+					_r_button_setcheck (hwnd, IDC_LAG_SANDBOX_CHK, (lag_mask & LAG_REDUCT_ORPHAN_SANDBOX) == LAG_REDUCT_ORPHAN_SANDBOX);
+					_r_button_setcheck (hwnd, IDC_LAG_ANTIBUG_CHK, _r_config_getboolean (L"LagAntiBugEnable", TRUE, NULL));
+
+					_r_button_setcheck (hwnd, IDC_LAG_AUTOENABLE_CHK, _r_config_getboolean (L"LagAutoEnable", FALSE, NULL));
+					_r_button_setcheck (hwnd, IDC_LAG_WITHMEMCLEAN_CHK, _r_config_getboolean (L"LagWithMemClean", TRUE, NULL));
+
+					_r_updown_setrange (hwnd, IDC_LAG_SYSHANDLE, 100, 2000);
+					_r_updown_setvalue (hwnd, IDC_LAG_SYSHANDLE, _lag_getsyshandlelimit_k ());
+
+					_r_updown_setrange (hwnd, IDC_LAG_PROCHANDLE, 10, 500);
+					_r_updown_setvalue (hwnd, IDC_LAG_PROCHANDLE, _lag_getprochandlelimit_k ());
+
+					if (!_r_sys_iselevated ())
+					{
+						_r_ctrl_enable (hwnd, IDC_LAG_HANDLELEAK_CHK, FALSE);
+						_r_ctrl_enable (hwnd, IDC_LAG_DWMRESET_CHK, FALSE);
+						_r_ctrl_enable (hwnd, IDC_LAG_SANDBOX_CHK, FALSE);
+						_r_ctrl_enable (hwnd, IDC_LAG_ANTIBUG_CHK, FALSE);
+						_r_ctrl_enable (hwnd, IDC_LAG_AUTOENABLE_CHK, FALSE);
+						_r_ctrl_enable (hwnd, IDC_LAG_WITHMEMCLEAN_CHK, FALSE);
+						_r_ctrl_enable (hwnd, IDC_LAG_SYSHANDLE_CTRL, FALSE);
+						_r_ctrl_enable (hwnd, IDC_LAG_PROCHANDLE_CTRL, FALSE);
+						_r_button_setshield (hwnd, IDC_LAG_CLEAN_BTN, TRUE);
+					}
+
+					break;
+				}
 			}
 
 			break;
@@ -1119,6 +1236,27 @@ INT_PTR CALLBACK SettingsProc (
 				{
 					_r_ctrl_setstring (hwnd, IDC_ALLOWSTANDBYLISTCLEANUP_CHK, _r_locale_getstring (IDS_ALLOWSTANDBYLISTCLEANUP_CHK));
 					_r_ctrl_setstring (hwnd, IDC_LOGRESULTS_CHK, _r_locale_getstring (IDS_LOGRESULTS_CHK));
+
+					break;
+				}
+
+				case IDD_SETTINGS_LAGREDUCT:
+				{
+					_r_ctrl_setstringformat (hwnd, IDC_LAG_TITLE_1, L"%s:", _r_locale_getstring (IDS_LAG_TITLE_1));
+					_r_ctrl_setstringformat (hwnd, IDC_LAG_TITLE_2, L"%s:", _r_locale_getstring (IDS_LAG_TITLE_2));
+
+					_r_ctrl_setstring (hwnd, IDC_LAG_HANDLELEAK_CHK, _r_locale_getstring (IDS_LAG_HANDLELEAK_CHK));
+					_r_ctrl_setstring (hwnd, IDC_LAG_DWMRESET_CHK, _r_locale_getstring (IDS_LAG_DWMRESET_CHK));
+					_r_ctrl_setstring (hwnd, IDC_LAG_SANDBOX_CHK, _r_locale_getstring (IDS_LAG_SANDBOX_CHK));
+					_r_ctrl_setstring (hwnd, IDC_LAG_ANTIBUG_CHK, _r_locale_getstring (IDS_LAG_ANTIBUG_CHK));
+
+					_r_ctrl_setstring (hwnd, IDC_LAG_AUTOENABLE_CHK, _r_locale_getstring (IDS_LAG_AUTOENABLE_CHK));
+					_r_ctrl_setstring (hwnd, IDC_LAG_WITHMEMCLEAN_CHK, _r_locale_getstring (IDS_LAG_WITHMEMCLEAN_CHK));
+					_r_ctrl_setstring (hwnd, IDC_LAG_SYSHANDLE_HINT, _r_locale_getstring (IDS_LAG_SYSHANDLE_HINT));
+					_r_ctrl_setstring (hwnd, IDC_LAG_PROCHANDLE_HINT, _r_locale_getstring (IDS_LAG_PROCHANDLE_HINT));
+
+					_r_ctrl_setstring (hwnd, IDC_LAG_CLEAN_BTN, _r_locale_getstring (IDS_LAG_CLEAN_BTN));
+					_r_ctrl_setstring (hwnd, IDC_LAG_SHELLSYNC_BTN, _r_locale_getstring (IDS_LAG_SHELLSYNC_BTN));
 
 					break;
 				}
@@ -1344,6 +1482,22 @@ INT_PTR CALLBACK SettingsProc (
 
 				is_stylechanged = TRUE;
 			}
+			else if (ctrl_id == IDC_LAG_SYSHANDLE)
+			{
+				value = _r_updown_getvalue (hwnd, ctrl_id);
+
+				_r_config_setulong (L"LagSysHandleLimitK", (ULONG)value, NULL);
+
+				is_stylechanged = TRUE;
+			}
+			else if (ctrl_id == IDC_LAG_PROCHANDLE)
+			{
+				value = _r_updown_getvalue (hwnd, ctrl_id);
+
+				_r_config_setulong (L"LagProcHandleLimitK", (ULONG)value, NULL);
+
+				is_stylechanged = TRUE;
+			}
 
 			if (is_stylechanged)
 			{
@@ -1362,6 +1516,97 @@ INT_PTR CALLBACK SettingsProc (
 
 			switch (ctrl_id)
 			{
+				case IDC_LAG_SYSHANDLE_CTRL:
+				{
+					if (notify_code == EN_CHANGE)
+					{
+						_r_config_setulong (L"LagSysHandleLimitK", (ULONG)_r_updown_getvalue (hwnd, IDC_LAG_SYSHANDLE), NULL);
+
+						_app_iconredraw (_r_app_gethwnd ());
+						_r_listview_redraw (_r_app_gethwnd (), IDC_LISTVIEW);
+					}
+
+					break;
+				}
+
+				case IDC_LAG_PROCHANDLE_CTRL:
+				{
+					if (notify_code == EN_CHANGE)
+					{
+						_r_config_setulong (L"LagProcHandleLimitK", (ULONG)_r_updown_getvalue (hwnd, IDC_LAG_PROCHANDLE), NULL);
+
+						_app_iconredraw (_r_app_gethwnd ());
+						_r_listview_redraw (_r_app_gethwnd (), IDC_LISTVIEW);
+					}
+
+					break;
+				}
+
+				case IDC_LAG_HANDLELEAK_CHK:
+				case IDC_LAG_DWMRESET_CHK:
+				case IDC_LAG_SANDBOX_CHK:
+				{
+					ULONG lag_mask = _lag_getmask ();
+					ULONG bit = 0;
+
+					if (ctrl_id == IDC_LAG_HANDLELEAK_CHK)
+					{
+						bit = LAG_REDUCT_HANDLE_LEAKS;
+					}
+					else if (ctrl_id == IDC_LAG_DWMRESET_CHK)
+					{
+						bit = LAG_REDUCT_DWM_BLOAT;
+					}
+					else if (ctrl_id == IDC_LAG_SANDBOX_CHK)
+					{
+						bit = LAG_REDUCT_ORPHAN_SANDBOX;
+					}
+
+					if (_r_button_ischecked (hwnd, ctrl_id))
+					{
+						lag_mask |= bit;
+					}
+					else
+					{
+						lag_mask &= ~bit;
+					}
+
+					_r_config_setulong (L"LagReductMask", lag_mask, NULL);
+
+					break;
+				}
+
+				case IDC_LAG_ANTIBUG_CHK:
+				{
+					_r_config_setboolean (L"LagAntiBugEnable", _r_button_ischecked (hwnd, ctrl_id), NULL);
+					break;
+				}
+
+				case IDC_LAG_AUTOENABLE_CHK:
+				{
+					_r_config_setboolean (L"LagAutoEnable", _r_button_ischecked (hwnd, ctrl_id), NULL);
+					break;
+				}
+
+				case IDC_LAG_WITHMEMCLEAN_CHK:
+				{
+					_r_config_setboolean (L"LagWithMemClean", _r_button_ischecked (hwnd, ctrl_id), NULL);
+					break;
+				}
+
+				case IDC_LAG_CLEAN_BTN:
+				{
+					_lag_clean (_r_app_gethwnd (), SOURCE_MANUAL, 0, TRUE, NULL);
+					_app_iconredraw (_r_app_gethwnd ());
+					break;
+				}
+
+				case IDC_LAG_SHELLSYNC_BTN:
+				{
+					_lag_sync_shell_and_frames (_r_app_gethwnd (), TRUE);
+					break;
+				}
+
 				case IDC_AUTOREDUCTVALUE_CTRL:
 				{
 					LONG value;
@@ -1695,11 +1940,12 @@ VOID _app_initialize (
 	ULONG privileges[] = {
 		SE_PROF_SINGLE_PROCESS_PRIVILEGE,
 		SE_INCREASE_QUOTA_PRIVILEGE,
+		SE_DEBUG_PRIVILEGE,
 	};
 
 	if (_r_sys_iselevated ())
 	{
-		_r_sys_setprocessprivilege (hwnd, NtCurrentProcess (), privileges, RTL_NUMBER_OF (privileges), TRUE);
+		_r_sys_setprocessprivilege (NtCurrentProcess (), privileges, RTL_NUMBER_OF (privileges), TRUE);
 	}
 	else
 	{
@@ -1731,9 +1977,16 @@ VOID _app_initialize (
 		}
 	}
 
+	// group 4: system lag guard
+	_r_listview_addgroup (hwnd, IDC_LISTVIEW, 3, _r_locale_getstring (IDS_GROUP_4), 0, LVGS_COLLAPSIBLE, LVGS_COLLAPSIBLE);
+	_r_listview_additem (hwnd, IDC_LISTVIEW, 9, _r_locale_getstring (IDS_LAG_ITEM_1), I_DEFAULT, 3, 0);
+	_r_listview_additem (hwnd, IDC_LISTVIEW, 10, _r_locale_getstring (IDS_LAG_ITEM_2), I_DEFAULT, 3, 0);
+	_r_listview_additem (hwnd, IDC_LISTVIEW, 11, _r_locale_getstring (IDS_LAG_ITEM_3), I_DEFAULT, 3, 0);
+
 	// settings
 	_r_settings_addpage (IDD_SETTINGS_GENERAL, IDS_SETTINGS_GENERAL);
 	_r_settings_addpage (IDD_SETTINGS_MEMORY, IDS_SETTINGS_MEMORY);
+	_r_settings_addpage (IDD_SETTINGS_LAGREDUCT, IDS_SETTINGS_LAGREDUCT);
 	_r_settings_addpage (IDD_SETTINGS_APPEARANCE, IDS_SETTINGS_APPEARANCE);
 	_r_settings_addpage (IDD_SETTINGS_TRAY, IDS_SETTINGS_TRAY);
 	_r_settings_addpage (IDD_SETTINGS_ADVANCED, IDS_TITLE_ADVANCED);
@@ -1858,6 +2111,11 @@ INT_PTR CALLBACK DlgProc (
 				}
 			}
 
+			_r_listview_setgroup (hwnd, IDC_LISTVIEW, 3, _r_locale_getstring (IDS_GROUP_4), 0, 0);
+			_r_listview_setitem (hwnd, IDC_LISTVIEW, 9, 0, _r_locale_getstring (IDS_LAG_ITEM_1), I_DEFAULT, I_DEFAULT, I_DEFAULT);
+			_r_listview_setitem (hwnd, IDC_LISTVIEW, 10, 0, _r_locale_getstring (IDS_LAG_ITEM_2), I_DEFAULT, I_DEFAULT, I_DEFAULT);
+			_r_listview_setitem (hwnd, IDC_LISTVIEW, 11, 0, _r_locale_getstring (IDS_LAG_ITEM_3), I_DEFAULT, I_DEFAULT, I_DEFAULT);
+
 			// configure button
 			_r_ctrl_setstring (hwnd, IDC_CLEAN, _r_locale_getstring (IDS_CLEAN));
 
@@ -1950,6 +2208,10 @@ INT_PTR CALLBACK DlgProc (
 					_r_str_printf (buffer, RTL_NUMBER_OF (buffer), L"%s (win10+)", _r_locale_getstring (IDS_MEMREGION_COMBINEMEMORYLISTS));
 					_r_menu_additem (hmenu, IDM_CLEAN_COMBINEMEMORYLISTS, buffer);
 
+					_r_menu_additem (hmenu, 0, NULL);
+					_r_menu_additem (hmenu, IDM_CLEAN_LAGREDUCT, _r_locale_getstring (IDS_LAG_CLEAN_BTN));
+					_r_menu_additem (hmenu, IDM_CLEAN_SHELLSYNC, _r_locale_getstring (IDS_LAG_SHELLSYNC_BTN));
+
 					if (_r_sys_isosversionlower (WINDOWS_8_1))
 						_r_menu_enableitem (hmenu, IDM_CLEAN_REGISTRYCACHE, FALSE, FALSE);
 
@@ -2034,7 +2296,6 @@ INT_PTR CALLBACK DlgProc (
 				case WM_LBUTTONDOWN:
 				case WM_MBUTTONDOWN:
 				{
-					R_STRINGREF taskmgr_sr = PR_STRINGREF_INIT (L"taskmgr.exe");
 					LONG action;
 
 					if (LOWORD (lparam) == WM_MBUTTONDOWN)
@@ -2056,7 +2317,7 @@ INT_PTR CALLBACK DlgProc (
 
 						case 2:
 						{
-							_r_sys_createprocess (&taskmgr_sr, NULL, NULL, FALSE);
+							_r_sys_createprocess (L"taskmgr.exe", NULL, NULL, FALSE);
 							break;
 						}
 
@@ -2096,6 +2357,7 @@ INT_PTR CALLBACK DlgProc (
 					// localize
 					_r_menu_setitemtext (hsubmenu, IDM_TRAY_SHOW, FALSE, _r_locale_getstring (IDS_TRAY_SHOW));
 					_r_menu_setitemtextformat (hsubmenu, IDM_TRAY_CLEAN, FALSE, L"%s...", _r_locale_getstring (IDS_CLEAN));
+					_r_menu_setitemtextformat (hsubmenu, IDM_TRAY_CLEAN_LAG, FALSE, L"%s...", _r_locale_getstring (IDS_LAG_CLEAN_BTN));
 					_r_menu_setitemtext (hsubmenu, TRAY_SUBMENU_1, TRUE, _r_locale_getstring (IDS_TRAY_POPUP_1));
 					_r_menu_setitemtext (hsubmenu, TRAY_SUBMENU_2, TRUE, _r_locale_getstring (IDS_TRAY_POPUP_2));
 					_r_menu_setitemtext (hsubmenu, TRAY_SUBMENU_3, TRUE, _r_locale_getstring (IDS_TRAY_POPUP_3));
@@ -2493,10 +2755,24 @@ INT_PTR CALLBACK DlgProc (
 						}
 						else
 						{
-							_r_show_message (hwnd, MB_OK | MB_ICONSTOP, _r_locale_getstring (IDS_STATUS_NOPRIVILEGES), NULL);
+							_r_show_message (hwnd, MB_OK | MB_ICONSTOP, NULL, _r_locale_getstring (IDS_STATUS_NOPRIVILEGES));
 						}
 					}
 
+					break;
+				}
+
+				case IDM_CLEAN_LAGREDUCT:
+				case IDM_TRAY_CLEAN_LAG:
+				{
+					_lag_clean (hwnd, SOURCE_MANUAL, 0, TRUE, NULL);
+					_app_iconredraw (hwnd);
+					break;
+				}
+
+				case IDM_CLEAN_SHELLSYNC:
+				{
+					_lag_sync_shell_and_frames (hwnd, TRUE);
 					break;
 				}
 
@@ -2534,6 +2810,7 @@ BOOLEAN NTAPI _app_parseargs (
 {
 	PR_STRING clean_args;
 	ULONG mask = 0;
+	BOOLEAN is_lag_only = FALSE;
 
 	switch (type)
 	{
@@ -2544,24 +2821,37 @@ BOOLEAN NTAPI _app_parseargs (
 			if (clean_args)
 			{
 				if (_r_str_isequal2 (&clean_args->sr, L"full", TRUE))
+				{
 					mask = REDUCT_MASK_ALL;
+				}
+				else if (_r_str_isequal2 (&clean_args->sr, L"lag", TRUE))
+				{
+					is_lag_only = TRUE;
+				}
 
 				_r_obj_dereference (clean_args);
 			}
 
-			if (mask == 0)
-				mask = REDUCT_MASK_DEFAULT;
-
 			_app_initialize (NULL);
 
-			_app_memoryclean (NULL, SOURCE_CMDLINE, mask);
+			if (is_lag_only)
+			{
+				_lag_clean (NULL, SOURCE_CMDLINE, LAG_REDUCT_MASK_ALL, FALSE, NULL);
+			}
+			else
+			{
+				if (mask == 0)
+					mask = REDUCT_MASK_DEFAULT;
+
+				_app_memoryclean (NULL, SOURCE_CMDLINE, mask);
+			}
 
 			return TRUE;
 		}
 
 		case CmdlineHelp:
 		{
-			_r_show_message (NULL, MB_OK | MB_ICONINFORMATION, NULL, L"Available options for memreduct.exe:\r\n\r\n-clean - clear default memory regions\r\n" "-clean:full - clear all memory regions");
+			_r_show_message (NULL, MB_OK | MB_ICONINFORMATION, NULL, L"Available options for memreduct.exe:\r\n\r\n-clean - clear default memory regions\r\n-clean:full - clear all memory regions\r\n-clean:lag - clean three lag sources (Lag Reduct)");
 
 			return TRUE;
 		}
@@ -2578,6 +2868,10 @@ INT APIENTRY wWinMain (
 )
 {
 	HWND hwnd;
+
+	UNREFERENCED_PARAMETER (prev_hinst);
+	UNREFERENCED_PARAMETER (cmdline);
+	UNREFERENCED_PARAMETER (show_cmd);
 
 	if (!_r_app_initialize (&_app_parseargs))
 		return ERROR_APP_INIT_FAILURE;

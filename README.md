@@ -26,6 +26,21 @@ You can download either the installer or portable version. For correct working y
 To activate portable mode, create "memreduct.ini" in application folder, or move it from "%APPDATA%\Henry++\Mem Reduct".
 ```
 
+### Lag Reduct Submodule (`src/lagreduct.c` / `src/lagreduct.h`):
+This fork extends **Mem Reduct** with a pure C Windows **Native API** (`ntdll.dll` / `dwmapi.dll`) **System Lag Guard & Remediation Submodule** designed to resolve long-uptime Windows UI stutter even when physical RAM usage is low:
+
+1. **Three Lag-Source Remediation Engines** (`NtQuerySystemInformation`, `NtOpenProcess`, `NtTerminateProcess`, `NtWaitForSingleObject`, `NtDelayExecution`, `NtSetSystemInformation`):
+   - **Handle-Leak & Runaway Kernel-CPU Background Reaper**: Detects non-interactive user-session background helpers leaking tens of thousands of handles or pegging kernel-mode CPU, while strictly protecting Session 0 system services, security cores, productivity apps, and any process owning a visible user window.
+   - **Safe `dwm.exe` Handle-Bloat Reset**: Monitors Desktop Window Manager (`dwm.exe`) handle count and resets it **only** when handles exceed the configured bloat threshold (default `50,000` handles), reclaiming tens of thousands of leaked composition handles without closing open user applications.
+   - **Orphaned / Runaway Headless Sandbox Reaper & Kernel Pool Relief**: Cleans orphaned headless WebView2/sandbox worker processes spinning CPU in the background and flushes kernel registry/standby caches under elevated system-wide handle pressure.
+2. **Threshold Auto-Clean & Manual Clean Controls**:
+   - Real-time **System lag guard** group in the main window (`System handles`, `DWM handles`, `Kernel pool NP / P`).
+   - Dedicated **Lag Reduct (防卡顿清理)** tab in Settings with configurable thresholds (`System handles limit`, `Process / DWM handle limit`), automatic threshold trigger, main-button linkage, split-button dropdown actions, tray menu item, and CLI flag `-clean:lag`.
+3. **Built-in Anti-Bug Safeguards**:
+   - **Threshold & Cooldown Gates**: Never restarts `dwm.exe` when healthy (`< limit`), enforces a 10-minute cooldown to prevent `winlogon.exe` session logoff, and skips fullscreen 3D/game sessions (`SHQueryUserNotificationState`).
+   - **Automatic Win11 Shell XAML Resync**: After a `dwm.exe` reset, an async Native worker thread waits for the new `dwm.exe` instance to initialize and automatically refreshes stale DirectComposition hosts (`SearchHost.exe`, `StartMenuExperienceHost.exe`, `ShellExperienceHost.exe`, `TextInputHost.exe`) so Windows Search, Start Menu, and Clipboard flyouts never turn blank.
+   - **DWM Backdrop & Frame Restoration**: Snapshots top-level window `DWMWA_SYSTEMBACKDROP_TYPE`, `DWMWA_USE_IMMERSIVE_DARK_MODE`, and `DWMWA_WINDOW_CORNER_PREFERENCE` attributes prior to reset, then restores attributes and broadcasts non-blocking `WM_DWMCOMPOSITIONCHANGED` / `WM_THEMECHANGED` / `SWP_FRAMECHANGED` frame redraws to preserve Mica/Acrylic window borders.
+
 ### System requirements:
 - Windows 7, 8, 8.1, 10, 11 (64-bit/ARM64)
 - An SSE2-capable CPU

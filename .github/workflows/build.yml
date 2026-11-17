@@ -1,0 +1,55 @@
+name: Build Mem Reduct (x64)
+
+on:
+  push:
+    branches: [ master, main ]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  build-x64:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout memreduct
+        uses: actions/checkout@v4
+        with:
+          path: memreduct
+          submodules: false
+
+      - name: Checkout henrypp/routine SDK
+        uses: actions/checkout@v4
+        with:
+          repository: henrypp/routine
+          ref: ff8f811
+          path: routine
+
+      - name: Setup MSBuild
+        uses: microsoft/setup-msbuild@v2
+
+      - name: Build Release x64
+        shell: pwsh
+        run: |
+          $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+          $ver = & $vswhere -latest -property installationVersion
+          Write-Host "Visual Studio version: $ver"
+          $toolset = if ($ver -like "18.*") { "v145" } else { "v143" }
+          Write-Host "Using PlatformToolset: $toolset"
+          $solDir = (Resolve-Path "memreduct").Path + "\"
+          msbuild memreduct\memreduct.vcxproj -p:Configuration=Release -p:Platform=x64 -p:PlatformToolset=$toolset -p:SolutionDir="$solDir" -v:normal
+
+      - name: Stage Portable Package
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Path dist -Force | Out-Null
+          Copy-Item "memreduct\bin\64\memreduct.exe" "dist\memreduct.exe"
+          Copy-Item "memreduct\bin\memreduct.lng" "dist\memreduct.lng"
+          Copy-Item "memreduct\bin\Readme.txt" "dist\Readme.txt"
+          Copy-Item "memreduct\bin\History.txt" "dist\History.txt"
+          Copy-Item "memreduct\bin\License.txt" "dist\License.txt"
+
+      - name: Upload Portable Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: memreduct-lagreduct-x64-portable
+          path: dist/*

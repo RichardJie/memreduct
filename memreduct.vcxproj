@@ -361,6 +361,7 @@
   <ItemGroup>
     <ClCompile Include="..\routine\src\rapp.c" />
     <ClCompile Include="..\routine\src\routine.c" />
+    <ClCompile Include="src\lagreduct.c" />
     <ClCompile Include="src\main.c" />
   </ItemGroup>
   <ItemGroup>
@@ -371,8 +372,10 @@
     <ClInclude Include="..\routine\src\routine.h" />
     <ClInclude Include="..\routine\src\rtypes.h" />
     <ClInclude Include="src\app.h" />
+    <ClInclude Include="src\lagreduct.h" />
     <ClInclude Include="src\main.h" />
     <ClInclude Include="src\resource.h" />
+    <ClInclude Include="src\routine_compat.h" />
   </ItemGroup>
   <ItemGroup>
     <ResourceCompile Include="src\resource.rc" />
